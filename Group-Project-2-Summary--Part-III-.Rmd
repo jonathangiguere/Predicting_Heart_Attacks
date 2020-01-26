@@ -1,0 +1,934 @@
+---
+title: "DATS6101 Group Project 2: Predicting Heart Attacks"
+author: "Jonathan Giguere, Jesse Borg, Ese Emuraye, Sarah Gates"
+date: "December 9th 2019"
+output: 
+   html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(error = FALSE)
+```
+
+```{r basicfcn, include=F}
+# can add quietly=T option to the require() function
+loadPkg = function(x) { if (!require(x,character.only=T, quietly =T)) { install.packages(x,dep=T,repos="http://cran.us.r-project.org"); if(!require(x,character.only=T)) stop("Package not found") } }
+```
+
+```{r load-packages, message = FALSE}
+# Load the packages using the loadPkg function
+
+loadPkg('ggplot2')
+loadPkg('dplyr')
+loadPkg('usmap')
+loadPkg('viridis')
+loadPkg('ResourceSelection')
+loadPkg('pROC')
+loadPkg('pscl')
+loadPkg('caret')
+loadPkg('car')
+```
+
+## 1. Introduction
+
+Heart attacks in the US is one of the biggest killers, with approximately 600,000 people dying from heart attacks in the US each year; which means that 1 in 4 deaths are caused by heart attacks. In total, every year around 735,000 Americans have a heart attack; where 525,000 cases are a first heart attack and 210,000 happen to people who have previously suffered a heart attack ([CDC](https://www.cdc.gov/heartdisease/facts.htm)). This means that over 80% of heart attacks in the US are fatal. Knowing the warning signs and symptoms of a heart attack can greatly increase the chance of survival, especially when medical treatment is delivered as soon as these symptoms arise. The leading cause of heart attacks is Coronary Heart Disease; which  is a condition in which the coronary arteries (the major blood vessels that supply the heart with blood) get clogged up with deposits of cholesterol. ([NHS](https://www.nhs.uk/conditions/heart-attack/causes/)). There are many factors which cause Coronary Heart Disease which eventually lead to heart attacks, and since so many people are dying every year from heart attacks, this is a very relevant and important topic to conduct more research on.
+
+For this analysis, the Behavioral Risk Factor Surveillance System (BRFSS) data from the 2013 survey was used to carry out an EDA and build models to determine the most important variables when predicting whether someone will have a heart attack or not. This data is collected by the CDC from all 50 states via landline phone and cellular phone, covering a variety of health related topics. Generalizability is limited to those in the population with access to a landline or cell phone as well as to those living in a private residence or college housing. These factors leave out individuals and households who fall outside of these conditions, which means that random sampling is not fully taking place. Sampling bias occurs in the form of non-response, indicated by the NA/null points that exist in the dataset.
+
+Our goal is to analyze factors that we believe may be related to heart attacks. We will not assume causality in the EDA portion of our project. We will spend time in it exploring relationships between these variables. After this, we will build and analyze the effectiveness of building two models as they relate to classifying and possibly predicting the occurence of a heart attack in an individual. We will utilize the decision tree method for classification and logistic regression for prediction. We selected these methods because our data includes both categorical and numeric variables and needed flexible methods to be able to work with both types.
+
+## 2. Description of Data
+
+```{r load-data}
+# Load the RData dataset
+
+load("brfss2013.RData")
+```
+
+### 2.1 Discussion of Data Sources
+
+The BRFSS 2013 Survey dataset was obtained from the [CDC](https://www.cdc.gov/), which contained 491775 observations with 330 variables. Upon first inspection of the variables, it was determined that not all of them was needed, and with the use of literature the dataset was narrowed down to 45 variables.
+
+```{r keeps}
+# Choose which variables we want to keep
+
+keeps <- c('X_state', 'imonth', 'genhlth', 'menthlth', 'hlthpln1', 'sleptim1', 'bphigh4', 'bpmeds', 'cholchk','toldhi2', 'cvdinfr4', 'cvdcrhd4', 'cvdstrk3', 'asthma3', 'asthnow', 'addepev2', 'chckidny', 'diabete3', 'veteran3', 'marital', 'educa', 'employ1', 'income2', 'weight2', 'sex', 'pregnant', 'diffwalk', 'smoke100', 'smokday2', 'stopsmk2', 'usenow3', 'alcday5', 'avedrnk2', 'drnk3ge5', 'fruit1', 'fvgreen', 'exerany2', 'prediab1', 'qlmentl2', 'qlstres2', 'drvisits', 'ssbsugar', 'cvdasprn', 'scntwrk1','X_ageg5yr')
+
+brfss_reduced <- brfss2013[keeps]
+```
+
+
+```{r rename}
+# Rename the variables to be more descriptive
+
+new_names <- c('state', 'month', 'gen_health', 'mental_health', 'health_coverage', 'sleep_time', 'high_bp', 'bp_meds', 'time_since_cholcheck','told_high_chol', 'heart_attack', 'angina', 'stroke', 'asthma', 'has_asthma_now', 'depression', 'kidney_disease', 'diabetes', 'veteran', 'marital_status', 'education_level', 'employment_status', 'income', 'weight', 'sex', 'pregnant', 'difficulty_walk', 'smoke_100', 'freq_smoke', 'stop_smoke_year', 'smokeless_tabac', 'alc_past_30', 'alc_perday_30', 'binge_alc', 'fruit_freq', 'green_veg_freq', 'exercise_30', 'prediabetes', 'depressed_30', 'anxious_30', 'dr_visits_year', 'soda_freq', 'aspirin_daily', 'work_hours_week','age5yr_bucket')
+
+names(brfss_reduced) <- new_names
+```
+
+### 2.2 Cleaning the Data
+
+As with most raw datasets, it is imperative to perform some cleaning operations to remove invalid data.
+
+#### 2.2.1 Removing Null Values
+
+Our first step in cleaning the data is to identify null values. The image below displays the count of null values in each category of the remaining variables in the BRFSS dataset. The fields with more than 100,000 null values were removed, which in this case were: 'dr_visits_year', 'prediabetes', 'binge_alc', 'alc_perday_30', 'freq_smoke', 'bp_meds', 'aspirin_daily', 'soda_freq', 'pregnant', 'stop_smoke_year', 'has_asthma_now', 'work_hours_week', 'depressed_30' and 'anxious_30'. 
+
+```{r check for NAs, include=F}
+# Use the is.na function and sort each column by missing values in ascending order
+
+missing_vals <- colSums(is.na(brfss_reduced))
+sort(missing_vals)
+```
+
+```{r check NA, echo = F, include = T}
+
+# review how many fields are NA
+par(mar = c(10, 6, 3, 0.5), mgp = c(5, 0.5, 0))
+barplot(colSums(is.na(brfss_reduced)),
+  col = "lightblue",
+  main = "BRFSS NA Values",
+  ylab = "Count of Null Values",
+  xlab = "",
+  las = 2,
+  cex.names = 0.7)
+
+title(xlab="Variable", line=7, cex.lab=1.2)
+```
+
+```{r}
+# Drop the variables which have too many missing values
+brfss_reduced_drops <- subset(brfss_reduced, select = -c(dr_visits_year, prediabetes, binge_alc, alc_perday_30, freq_smoke, bp_meds, aspirin_daily, soda_freq, pregnant, stop_smoke_year, has_asthma_now, work_hours_week, depressed_30, anxious_30))
+
+# Remove the rows which have na values in any of the remaining variables
+brfss_complete <- na.omit(brfss_reduced_drops)
+```
+
+After the variables with too many NA values were dropped, there were 31 variables left. Their descriptions can be found below:
+
+* **state** - State Fips Code
+* **month** - File Month
+* **gen_health** - General Health
+* **mental_health** - Mental Health
+* **health_coverage** - Health Coverage
+* **sleep_time** - How Much Do You Sleep
+* **high_bp** - Ever Told High Blood Pressure
+* **time_since_cholcheck** - Time Since Last Cholesterol Check
+* **told_high_chol** - Ever Told High Cholesterol
+* **heart_attack** - Ever Had a Heart Attack
+* **angina** - Ever Diagnosed With Angina Or Coronary Heart Disease
+* **stroke** - Ever Diagnosed With A Stroke
+* **asthma** - Ever Diagnosed With Asthma
+* **depression** - Ever Told You Had A Depressive Disorder
+* **kidney_disease** - Ever Told You Have Kidney Disease
+* **diabetes** - Ever Told You Have Diabetes
+* **veteran** - Are You A Veteran
+* **marital_status** - Marital Status
+* **education_level** - Education Level
+* **employment_status** - Employment Status
+* **income** - Annual Income
+* **weight** - How Much Do You Weigh
+* **sex** - What Is Your Gender/Sex
+* **difficulty_walk** -  Do You Have Difficulty Walking?
+* **smoke_100** - Smoked At Least 100 Cigarettes
+* **smokeless_tabac** -  Use Of Smokeless Tobacco Products
+* **alc_past_30** - Number of Alcoholic Drinks In Past Year
+* **fruit_freq** - Number Of Days Consumed Fruit In Past Year
+* **green_veg_freq** - Number of Days Consumed Green Vegetables In Past Year
+* **exercise_30** - Exercised In The Past 30 Days
+* **age5yr_bucket** - Year Group (5 Year Intervals)
+
+<br></br>
+
+#### 2.2.2 Clean up Variables for Analysis
+
+Next, to clean the data we will change the factors for the different variables we found appropriate. For some variables, the factors were different responses, and since there can be a wide variety of responses, we reduced the different options by changing the responses slightly and assigning the new factors. For most of the variables however, the factors were changed from a 'Yes' or 'No' response to 1 (Yes) or 0 (No). This will make the data easier to work with and allow the models to give better results. Once this was completed, the dataset was saved as a new dataset, which is the cleaned up version. This cleaned dataset will be used for the rest of the analysis. After the cleaning was completed, we moved on to the EDA analysis of the variables which we found were more important for this analysis.
+
+```{r load.data}
+# Load the Cleaned RData dataset
+load("brfss_complete.RData")
+```
+
+## 3. EDA Analysis
+
+This part will be the EDA of our analysis, which will help visualize the data better and help draw some early conclusions. This will serve as a good base for when the model analysis is carried out.
+
+### 3.1 SMART Question: Which States Had The Most Participants, and Which States Had The Highest Percentage of Heart Attacks?
+
+To visualize which states have the most participants and the highest percentage of heart attacks by participants, heatmaps will be plotted to help visualize the spread of participants and heart attacks within the US.
+
+```{r states and participants data}
+#Make dataframe showing number of survey particpants by state
+participants_map_df <-  brfss_complete %>% group_by(state) %>% summarise(n = n())
+participants_map_df <- participants_map_df[-c(52, 53), ]
+```
+
+```{r states and respondents}
+#Visualize map of number of participants per state
+plot_usmap(data = participants_map_df, values = "n", color = "white") + 
+  scale_fill_continuous(name = "Survey Participants by State", label = scales::comma) + 
+  labs(title = 'Number of Survey Participants per State') +
+  theme(legend.position = "right") 
+```
+
+The graph shows how the number of participants vary throughout the states, with Florida having the highest number of participants with over 20,000, whilst Kansas was the state with the second most participants. On the whole, most states had between 5,000 - 10,000 participants and there is no pattern as to which states have more participants. 
+
+```{r states and heart attack data}
+#Making dataframe for visualizing heart attacks per state
+#Notice that in order to add up the number of heart attacks, i convert the factor to a string and then an integer
+state_map_df <- brfss_complete %>% select(state, heart_attack) %>% mutate(state = as.character(state)) %>% group_by(state) %>% summarise(sum_ = sum(as.numeric(as.character(heart_attack)))) %>% filter(state != c('District of Columbia', 'Puerto Rico', 'Guam'))
+
+# Create the percentage of heart attacks to participants
+ratios <- (state_map_df$sum_ * 100)/ participants_map_df$n
+ratio_df <- data.frame(state_map_df$state, ratios)
+names(ratio_df) <- c("state", 'ratio')
+```
+
+```{r states and heart map}
+#Map showing number of heart attacks per state as a percentage of participants
+plot_usmap(data = ratio_df, values = "ratio", color = "white") + 
+  scale_fill_continuous(name = "Heart Attack Ratio", label = scales::comma) + 
+  labs(title = 'Ratio of Heart Attacks to Participants per State') +
+  theme(legend.position = "right")
+```
+
+This graph shows the percentage of participants which reported had suffered a heart attack. We can see that West Virginia is the state where most participants had suffered from a heart attack with over 9%. It seems that Alaska, Hawaii and Colorado having the lowest percentage of heart attacks. Generally, the Eastern States have a larger percentage of heart attacks than the Western States.
+
+### 3.2 SMART Question: How Do The Number Of Heart Attacks Vary According to Participants' General Health?
+
+To visualize the heart attacks by general health, a stacked bar chart was plotted with the different levels of general health represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+```{r heart attacks for different gen_health levels}
+#Visualize proportion of respondents with heart attacks by gen_health
+ggplot(brfss_complete, aes(x = gen_health, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Heart attack among levels of general health') +
+        ylab('Total') +
+        xlab('General Health') +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(size = 11, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+From the graph we can see that in the survey, participants had five options to classify how they thought their general health was. Most participants either said they had very good or good general health, whilst poor was the least common answer. In terms of heart attack ratios, those with good, fair or poor general health had a larger ratio of heart attacks. Those with excellent general health had very few heart attacks, which is expected if people answer truthfully.
+
+### 3.3 SMART Question: How Do The Number of Cholesterol Checks Vary By Age?
+
+To see how cholesterol checks vary by age, the responses were changed to make them easier to aggregate and remove variability. A column was then created for recent checks and another column for no recent checks. The data was then subsetted to only contain those with recent checks and a ratio/percentage was calculated using the no recent checks.
+
+Once this was done, graphs were plotted and yielded the following results:
+
+```{r}
+# Change the responses from 'within past year' to 'recent' if yes and 'not recent' if no 
+brfss_complete <- brfss_complete %>%
+  mutate(cholchkrecent = ifelse(time_since_cholcheck == "Within past year", "Recent", "Not Recent"))
+  
+# Create a column for those who responded 'recent',
+# Change the responses from 'recent' to 1 if yes and 0 if no
+brfss_complete <- brfss_complete %>%
+  mutate(cholchkrecent_yes = ifelse(cholchkrecent == "Recent", 1, 0))
+
+# Create a column for those who responded 'not recent'
+# Change the responses from 'not recent' to 1 if yes and 0 if no  
+brfss_complete <- brfss_complete %>%
+  mutate(cholchkrecent_no = ifelse(cholchkrecent == "Not Recent", 1, 0))
+
+
+# Create a subsetted dataframe to only have those which had a recent cholesterol check,
+# then create summart columns  
+T_cholchkrecent <- brfss_complete %>%
+  filter(told_high_chol != "No", !is.na(time_since_cholcheck), !is.na(age5yr_bucket)) %>%
+  group_by(age5yr_bucket) %>% 
+  summarise(cholchkratio = sum(cholchkrecent_yes) / sum(cholchkrecent_no), cholchkpercent = sum(cholchkrecent_yes) / (sum(cholchkrecent_no) + sum(cholchkrecent_yes)), cholchkcount = n()) 
+# cholchkratio: ratio of cholchkrecent yes to no
+# cholchkpercent: percent of cholchkrecent yes over total people with high cholesterol
+```
+
+```{r}
+# Plots
+# Plot the ratio of those checked
+ggplot(data = T_cholchkrecent, aes(x = age5yr_bucket, y = cholchkratio, color = cholchkratio, size = 1)) +
+       geom_point(show.legend = FALSE) +
+       ggtitle('Ratio of Cholesterol Checks by 5 Year Age Bucket') +
+       ylab('Cholesterol Check Ratio') +
+       xlab('Age (5 Year Bucket)') +
+       theme_bw() +
+       theme(plot.title = element_text(hjust = 0.5)) +
+       theme(axis.text.x = element_text(angle = 60, hjust = 1, color = 'black')) +
+       theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that the cholesterol check ratio remains relatively low until 49 years of age, after which it increases rapidly until 79 years. After that the ratio declines because people older than 80 are probably too sick to get cholosterol checks or have other, more important diseases to get treated.
+
+```{r}
+# Plot the percentage of those checked
+ggplot(data = T_cholchkrecent, aes(x = age5yr_bucket, y = cholchkpercent, color = cholchkpercent, size = 1)) +
+       geom_point(show.legend = FALSE) +
+       ggtitle('Percentage of Cholesterol Checks by 5 Year Age Bucket') +
+       ylab('Cholesterol Check Percentage') +
+       xlab('Age (5 Year Bucket)') +
+       theme_bw() +
+       theme(plot.title = element_text(hjust = 0.5)) +
+       theme(axis.text.x = element_text(angle = 60, hjust = 1, color = 'black')) +
+       theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The percentage of cholesterol checks is very similar to the ratio, but the percentage starts increasing at a younger age and doesnt increase so drastically. There is also a higher percentage of 80+ who have their cholesterol checks. 
+
+Below is a summary of the results for the cholesterol checks:
+
+```{r}
+# Group by the 5 year buckets and show the ratio, percentages and count 
+T_cholchkrecent %>%
+  group_by(age5yr_bucket) %>%
+  summarise(cholchkratio, cholchkpercent, cholchkcount)
+```
+
+### 3.4 SMART Question: How Does The Ratio Of Heart Attacks Vary By Participants' Age and The Time Since Their Last Cholesterol Check?
+
+To visualize the ratio of heart attacks by age and time since cholesterol check, a jitter plot was created, where each response is represented by a dot. This is a clever way of making the plot easier to read and is more meaningful.  
+
+```{r}
+# Visualize the ratio of heart attacks by age and time since last cholesterol check
+ggplot(brfss_complete, aes(x=age5yr_bucket, y=time_since_cholcheck, color = heart_attack)) +
+  geom_point(size=2) +
+  geom_jitter() +
+  ggtitle('Ratio of Heart Attacks by Time Since Cholesterol Check and 5 Year Age') +
+  ylab('Time Since Cholesterol Check') +
+  xlab('Age (5 Year Bucket)') +
+  labs(color="Heart Attack?") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, color = 'black')) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that as people get older, they are more likely to have a heart attack. When it comes to the time since cholesterol check, there doesnt seem to be much of an affect the likelihood of a heart attack, but those who have had a cholesterol check within the past year have a slightly higher chance of suffering a heart attack. This is most likely because they have gone in for a reason; probably that they are not feeling well and have had their cholesterol checked. Overall, the biggest factor is age. 
+
+### 3.5 SMART Question: How Do The Number Of Heart Attacks Vary Depending On Whether Participants Have Been Diagnosed With Angina?
+
+To visualize the heart attack relationship with angina, a stacked bar chart was plotted with the yes or no answers represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+
+```{r}
+# Visualize the ratio of heart attacks to angina
+ggplot(brfss_complete, aes(x = angina)) + geom_bar(aes(fill = heart_attack)) +
+       ggtitle('Ratio of Heart Attacks if Participant Has Suffered from Angina or Not') +
+       ylab('Count') +
+       xlab('Suffered Angina?') +
+       scale_x_discrete(labels= c('Yes', 'No')) +
+       scale_fill_discrete(name = "Heart Attack?") +
+       theme_bw() +
+       theme(plot.title = element_text(hjust = 0.5)) +
+       theme(axis.text.x = element_text(size = 11, color = 'black')) +
+       theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+It is clear that those who suffered angina had a much larger lisk of suffering a heart attack than those who didnt. The ratio of heart attacks within the participants who suffered angina was approximately 50%, whereas those who didnt suffer angina had a very small percentage of participants who suffered a heart attack.
+
+### 3.6 SMART Quesion: How Does Exercise Vary With Age and What Effect Does This Have On Heart Attacks?
+
+To visualize how the number of people who exercise with age, and the heart attacks depending on whether participants exercised or not, stacked bar charts were plotted. 
+  
+```{r}
+# Visualize if exercised in past 30 days by 5 year age bucket
+ggplot(brfss_complete, aes(x = exercise_30, fill = age5yr_bucket)) +
+        geom_bar() + 
+        ggtitle('Number of participants to have exercised in the past 30 days') +
+        ylab('Total') +
+        xlab('Exercised in the Past 30 Days?') +
+        scale_x_discrete(labels= c('Yes', 'No')) +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(size = 11, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+        scale_fill_manual(values=plasma(13), name = "Age Bucket (5 Years)")
+```
+
+Contrary to many people's thoughts, the age groups who exercised most in the study were those between 50 and 65 years of age. It shows that as age increases, the number of participants who exercised within the past 30 days also increased. This happens until the 60 to 64 age group, where the number of people who exercised within the past 30 days of the survey decreased. Thankfully, the number of people who said they had exercised is more than double than those who said they didnt.
+  
+```{r}
+# Visualize ratio of heart attacks if exercised in past 30 days
+ggplot(brfss_complete, aes(x = exercise_30, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Ratio of Heart Attacks if Participant Has Exercised in the Past 30 Days or Not') +
+        ylab('Total') +
+        xlab('Exercised in the Past 30 Days?') +
+        scale_x_discrete(labels= c('Yes', 'No')) +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(size = 11, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that there were more heart attacks suffered by people who had exercised within the past 30 days, but this is because many more participants had done so; the actual ratios of heart attacks are almost the same. Overall this is not a very good indicator as the question is too vague, so if someone has only exercised once in the past 30 days it does not mean anything and doesnt mean you are an active person. 
+
+### 3.7 SMART Question: How Does Employment Status Affect The Number of Heart Attacks?
+
+To visualize the heart attacks by employment status, a stacked bar chart was plotted with the different levels of employment level represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+```{r}
+# Visualize heart attack ratio to employment
+ggplot(brfss_complete, aes(x = employment_status, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Number of Participants With Heart Attacks by Employment Status ') +
+        ylab('Total') +
+        xlab('Employment Status') +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 10, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that the majority of participants were employed and the second most were retired. Those who were retired had the highest ratio of heart attacks; which is expected as retired participants are much older and are more likely to suffer a heart attack. Every other employment statuses had very low ratios of heart attacks, with no students suffering a heart attack. Again this reinforces the fact that age is the biggest variable when it comes to number of heart attacks suffered by participants.
+
+### 3.8 SMART Question: How Does Annual Income Affect The Number of Heart Attacks?
+
+To visualize the heart attacks by annual income, a stacked bar chart was plotted with the different levels of annual income represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+```{r}
+# Visualize heart attack ratio to annual income
+ggplot(brfss_complete, aes(x = income, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Number of Participants With Heart Attacks by Annual Income') +
+        ylab('Total') +
+        xlab('Annual Income') +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 10, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+```
+
+The graph shows that the number of participants in each income bracket increases as the annual income increases. The number of heart attacks in each bracket appear to be the same, but there are more participants as income increases. This means that as annual income increases, the ratio of heart attacks among participants decreases.
+
+### 3.9 SMART Question: How Does Gender Affect The Number of Heart Attacks?
+
+To visualize the heart attacks by gender, a stacked bar chart was plotted with each gender represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+```{r}
+# Visualize heart attack ratio to gender
+ggplot(brfss_complete, aes(x = sex, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Number pf Participants With Heart Attacks by Gender') +
+        ylab('Total') +
+        xlab('Gender') +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(size = 11, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that the majority of participants were female. However males had more heart attacks even though there were much less male participants. This means that men have a much greater chance of suffering a heart attack than women.
+
+### 3.10 SMART Question: How Does Blood Pressure Affect The Number of Heart Attacks?
+
+To visualize the heart attacks by blood pressure, a stacked bar chart was plotted with high blood pressure or not represented by different bars, 1 representing a heart attack and 0 representing no heart attack.
+
+```{r heart attacks based on high blood pressure}
+#Visualize proportion of respondents with heart attacks by high_bp
+ggplot(brfss_complete, aes(x = high_bp, fill = heart_attack)) +
+        geom_bar() + 
+        ggtitle('Heart attacks among people with and without high blood pressure') +
+        ylab('Total') +
+        xlab('High Blood Pressure?') +
+        scale_x_discrete(labels= c('Yes', 'No')) +
+        scale_fill_discrete(name = "Heart Attack?") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme(axis.text.x = element_text(size = 11, color = 'black')) +
+        theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+The graph shows that the majority of participants didnt have high blood pressure, but there were 5x more heart attacks within those with high blood pressure. This means that the ratio of heart attacks for those with high blood pressure is much greater than those without. 
+
+<br></br>
+
+## 4.Hypothesis Test
+
+### 4.1 SMART Question: Which Variables are Independent or Dependent From Heart Attacks
+
+Before the models were built, some hypothesis testing was carried out to see which variables are dependent or independent from heart attacks. To do this, the chi-squared test of independence was carried out using the heart attack and every other categorical variable individually.
+
+The hypotheses for the chi-squared test of independence were are follows:
+
+* **Null Hypothesis:** The two variables are independent
+* **Alternative Hypothesis:** The two variables are dependent
+
+Since there many categorical variables and more than 20 tests were carried out, we summarized the findings below:
+
+<br></br>
+
+Categorical Variable  | Chi-Test P-value < 0.05?     |Include?   | 
+----------------------|------------------------------|-----------|
+gen_health            |         True      | Yes       | 
+mental_health         |         True      | Yes       |  
+health_coverage       |         True      | Yes       |  
+high_bp               |         True      | Yes       |
+time_since_cholcheck  |         True      | Yes       |
+told_high_chol        |         True      | Yes       |
+angina                |         True      | Yes       |
+stroke                |         True      | Yes       |
+ashtma                |         True      | Yes       |
+depression            |         True      | Yes       |
+kidney_disease        |         True      | Yes       |
+diabetes              |         True      | Yes       |
+veteran               |         True      | Yes       |
+marital_status        |         True      | Yes       |
+education_level       |         True      | Yes       |
+employment_status     |         True      | Yes       |
+income                |         True      | Yes       |
+sex                   |         True      | Yes       |
+difficulty_walk       |         True      | Yes       |
+smoke_100             |         True      | Yes       |
+smokeless_tabac       |         False     | No        |
+exercise_30           |         True      | Yes       |
+age5yr_bucket         |         True      | Yes       |
+
+Based on the table above, we reject the null hypothesis for all variables except smokeless_tabac.  At a 0.05 threshold, all categorical variables have a dependent relationship with heart_attack except smokeless_tabac.  We will exclude smokeless_tabac in our models.
+
+<br></br>
+
+## 5. Model Building
+
+After carrying out the Chi-Squared Test of Indepence to determine which categorical variables to use in our models, its time to build the models. We started off by using classification trees.
+
+### 5.1 Getting Test and Training Sets
+
+Before diving into the creation of our first classification tree, we noticed that the data is imbalanced. This is a common occurence when working with medical data. Only 6.1% of the participants had heart attacks in our clean dataset. In order to balance our dataset for training and testing, we identified 19212 people with heart attacks and subsetted them.  Then, we randomly sampled 19212 other participants from the dataframe that contained no heart attacks.  Finally, we put these two dataframes together to get a balanced dataset with a total of 38424 records.  
+
+```{r, include=F}
+# Create two subsets, one where heart attack occured (1) and one where heart attack didnt occur (0)
+brfss_hrtattack <- subset(brfss_complete, heart_attack == '1')
+brfss_no_hrtattack <- subset(brfss_complete, heart_attack == '0')
+
+# Create ratios for the number of heart attacks occured and heart attacks didnt occur
+ratio1 <- nrow(brfss_hrtattack)/nrow(brfss_complete)
+ratio2 <- nrow(brfss_no_hrtattack)/nrow(brfss_complete)
+
+# Set the seen and then take a sample of no heart attacks randomly to balance the data
+set.seed(1)
+brfss_no_hrtattack <- sample_n(brfss_no_hrtattack, nrow(brfss_hrtattack))
+
+# Display the results
+balanced_brfss = rbind(brfss_hrtattack, brfss_no_hrtattack)
+nrow(balanced_brfss)
+rownames(balanced_brfss) <- NULL
+tail(balanced_brfss, 5)
+```
+
+Now that we have a balanced dataset, we split the data into training and test sets. We opted to use 30% of the data for testing and 70% for training.
+
+```{r}
+# create test set and training set
+set.seed(1)
+balanced_hrt_attack_sample <- sample(2, nrow(balanced_brfss), replace=TRUE, prob=c(0.70, 0.30))
+
+# select columns x-y as predictor variables for test/train outputs
+bal_hrt_attack_training <- balanced_brfss[balanced_hrt_attack_sample==1, c('heart_attack', 'gen_health', 'mental_health', 'health_coverage', 'sleep_time', 'high_bp', 'time_since_cholcheck', 'angina', 'stroke', 'asthma', 'depression', 'kidney_disease', 'diabetes', 'veteran', 'marital_status', 'education_level', 'employment_status', 'income',  'sex', 'difficulty_walk', 'smoke_100', 'alc_past_30', 'fruit_freq', 'green_veg_freq', 'exercise_30', 'age5yr_bucket')]
+
+bal_hrt_attack_test <- balanced_brfss[balanced_hrt_attack_sample==2, c('heart_attack', 'gen_health', 'mental_health', 'health_coverage', 'sleep_time', 'high_bp', 'time_since_cholcheck', 'angina', 'stroke', 'asthma', 'depression', 'kidney_disease', 'diabetes', 'veteran', 'marital_status', 'education_level', 'employment_status', 'income',  'sex', 'difficulty_walk', 'smoke_100', 'alc_past_30', 'fruit_freq', 'green_veg_freq', 'exercise_30', 'age5yr_bucket')]
+```
+
+### 5.2 SMART Question: Which variables are the most important variables for determining a heart attacks and which models provide the greatest accuracy for this prediction?
+
+#### 5.2.1 Decision Trees
+
+First, we construct a classification tree using all variables as predictors except smokeless_tabac (excluded as a result of chi-square tests), state, and month. We are using our balanced training data for creation of the tree.
+
+```{r, include=F}
+# Load the tree package
+loadPkg('tree')
+
+# Create a tree to predict heart attack using all the variables
+
+heart_attack_fit2 <- tree(heart_attack ~ gen_health + mental_health + health_coverage + sleep_time + high_bp + time_since_cholcheck + angina + stroke + asthma + depression + kidney_disease + diabetes + veteran + marital_status + education_level + employment_status + income + sex + difficulty_walk + smoke_100 + alc_past_30 + fruit_freq + green_veg_freq + exercise_30 + age5yr_bucket, method = 'class', data = bal_hrt_attack_training)
+
+# Summarize the results
+summary(heart_attack_fit2)
+```
+
+```{r}
+# Plot the results
+plot(heart_attack_fit2, uniform = TRUE, main="Classification Tree")
+text(heart_attack_fit2, use.n = TRUE, all = TRUE, cex=.8)
+```
+
+We can see that the variables in order of importance for determining heart attack are: angina, employment_status, gen_health and high_bp.  Many of the predictor variables are ignored as part of the tree function because their contributions to the model are very insignificant
+
+After creating the above tree, we want to assess how it classifies our training cases. To do so, we will create a confusion matrix and assess metrics like accuracy, precision, and recall.
+
+We now look at a confusion matrix to see how well the tree classifies our test cases. The accuracy has been calculated below and shows that our first decision tree classified the test cases with 77.6% accuracy.  
+
+```{r, include=F}
+# Validate Model using decision trees 
+tree.pred = predict(heart_attack_fit2, bal_hrt_attack_test, type = "class")
+
+# Compute the confusion matrix
+cmm = table(tree.pred, bal_hrt_attack_test$heart_attack)
+
+# Compute the accuracy from the confusion matrix
+accuracy.dec = (cmm[[1]] + cmm[[4]])/sum(cmm)
+accuracy.dec
+
+# Compute the sensitivity from confusion matrix
+sensitivity.dec = cmm[[1]]/(cmm[[1]] + cmm[[2]])
+sensitivity.dec
+
+# Compute the specificity from confusion matrix
+specificity.dec = cmm[[4]]/(cmm[[3]] + cmm[[4]])
+specificity.dec
+
+# Compute the precision from confusion matrix
+precision.dec = cmm[[1]]/(cmm[[1]] + cmm[[3]])
+precision.dec
+
+# Compute the recall from confusion matrix
+recall.dec = cmm[[1]]/(cmm[[1]] + cmm[[2]])
+recall.dec
+
+# Compute the F1 Score from precision and recall
+f1score.dec = 2 * ((precision.dec * recall.dec)/(precision.dec + recall.dec))
+f1score.dec
+```
+
+Statistic       | Score     | 
+----------------------|------------------------------|
+Accuracy              |         0.7759639   |
+Sensitivity           |         0.7815972   |
+Specificity           |         0.7703266   | 
+Precision             |         0.7730082   |
+Recall                |         0.7815972   |
+F1 Score              |         0.777279    |
+
+
+Next we will perform some cross validation to decide if our tree would benefit from any pruning.
+
+```{r, include=F}
+# Run the cross validation of the tree, show the number of splits and the errors of each cross validation
+cv.heart_attack = cv.tree(heart_attack_fit2, FUN=prune.misclass)
+cv.heart_attack$size
+cv.heart_attack$dev
+```
+
+Number of Splits    |     Deviation Score    |
+-----------------------|------------------------|
+5           |    6087       |
+4           |    6087       |
+2           |    6904       |
+1           |    13691      |
+
+Based on the cross validation, we can see that the optimal number of splits for the tree are either 5 or 4.  Because of these results, we will keep our original tree with four splits, as pruning the tree would provide no benefit.
+
+#### 5.2.2 Bagged Tree
+
+Next we attempt to perform bagging. This involves using all predictor variables to make a whole bunch of trees. Using more than one tree will hopefully increase model performance.
+
+```{r, include = F}
+# Load randomforest package
+loadPkg('randomForest')
+
+bag.heart_attack = randomForest(heart_attack~., data=bal_hrt_attack_training, mtry=25, importance= TRUE)
+bag.heart_attack
+```
+
+We can see that the performance of the bagged tree performed with slightly better accuracy.
+
+```{r, include=F}
+
+# Validate bagged tree model
+tree.pred_bagged = predict(bag.heart_attack, bal_hrt_attack_test, type = "class")
+
+# Compute confusion matrix
+cmm1 = table(tree.pred_bagged, bal_hrt_attack_test$heart_attack)
+
+# Compute the accuracy from confusion matrix
+accuracy.bag = (cmm1[[1]] + cmm1[[4]])/sum(cmm1)
+accuracy.bag
+
+# Compute the sensitivity from confusion matrix
+sensitivity.bag = cmm1[[1]]/(cmm1[[1]] + cmm1[[2]])
+sensitivity.bag
+
+# Compute the specificity from confusion matrix
+specificity.bag = cmm1[[4]]/(cmm1[[3]] + cmm1[[4]])
+specificity.bag
+
+# Compute the precision from confusion matrix
+precision.bag = cmm1[[1]]/(cmm1[[1]] + cmm1[[3]])
+precision.bag
+
+# Compute the recall from confusion matrix
+recall.bag = cmm1[[1]]/(cmm1[[1]] + cmm1[[2]])
+recall.bag
+
+# Compute the F1 Score from precision and recall
+f1score.bag = 2 * ((precision.bag * recall.bag)/(precision.bag + recall.bag))
+f1score.bag
+```
+
+Statistic      |  Bagged Score       |
+----------------------|------------------------------|
+Accuracy              |         0.79281        |
+Sensitivity           |         0.7751736      |
+Specificity           |         0.8104587      |
+Precision             |         0.8036357      |
+Recall                |         0.7751736      |
+F1 Score              |         0.7891481      |
+
+#### 5.2.3 Random Forest
+
+Next we will look at random forest and see if we can get even better accuracy.
+
+```{r, include=F}
+# perform random forest modelling 
+randForest.heart_attack = randomForest(heart_attack~., data=bal_hrt_attack_training, mtry=2, importance= TRUE)
+randForest.heart_attack
+```
+
+The confusion matrix and accuracy for the random forest is given below.
+
+```{r, include=F}
+# Validate randdom Forest tree model 
+tree.pred_randForest = predict(randForest.heart_attack, bal_hrt_attack_test, type = "class")
+
+# Compute confusion matrix
+cmm2 = table(tree.pred_randForest, bal_hrt_attack_test$heart_attack)
+
+# Compute accuracy from confusion
+accuracy.randT = (cmm2[[1]] + cmm2[[4]])/sum(cmm2)
+accuracy.randT
+
+# Compute the sensitivity from confusion matrix
+sensitivity.randT = cmm2[[1]]/(cmm2[[1]] + cmm2[[2]])
+sensitivity.randT
+
+# Compute the specificity from confusion matrix
+specificity.randT = cmm2[[4]]/(cmm2[[3]] + cmm2[[4]])
+specificity.randT
+
+# Compute the precision from confusion matrix
+precision.randT = cmm2[[1]]/(cmm2[[1]] + cmm2[[3]])
+precision.randT
+
+# Compute the recall from confusion matrix
+recall.randT = cmm2[[1]]/(cmm2[[1]] + cmm2[[2]])
+recall.randT
+
+# Compute the F1 Score from precision and recall
+f1score.randT = 2 * ((precision.randT * recall.randT)/(precision.randT + recall.randT))
+f1score.randT
+```
+
+Statistic       | Random Forest Score    |
+----------------------|------------------------------|
+Accuracy              |         0.8013199     |
+Sensitivity           |         0.8109375     |
+Specificity           |         0.7916956     |
+Precision             |         0.7957411     |
+Recall                |         0.8109375     |
+F1 Score              |         0.8032674     |
+
+### 5.3 Logistic Regression
+
+Now that the different tree models have been explored, logistic regression will be carried out.
+
+#### 5.3.1 SMART Question: Does Using Logistic Regression Yield Better Model Performance Than Decision Trees?
+
+The key variables identified in trees in order of significance: angina, employment status, general health, and high blood pressure. These are the variables which will be used in the logistic regression model. The backward selection method was attempted, but since there are so many variables, the model takes too long or just won't run all together. Furthermore, we decided it would be more sensible to use the variables determined in the tree section as opposed to forward selection, so we would not just be randomly selecting variables to model. We wanted to take a more strategic approach.
+
+Below are the results for the logistic regression model:  
+  - All p values are small, meaning that each variable (as well as each factor level) is a significant predictor
+
+```{r}
+# logistic regression
+# run chi squ test between categorical variables
+# use forward selection method
+heart_attack_logit1 <- glm(heart_attack ~ angina + employment_status + gen_health + high_bp, family="binomial", data = bal_hrt_attack_training)
+
+# all variables
+# ( sex + sleep_time + age5yr_bucket+ state + gen_health + mental_health + health_coverage + sleep_time + high_bp + time_since_cholcheck + angina + stroke + asthma + depression + kidney_disease + diabetes + veteran + marital_status + education_level + employment_status + income + weight + sex + difficulty_walk + smoke_100 + alc_past_30 + fruit_freq + green_veg_freq + exercise_30 + age5yr_bucket, family="binomial", data = heart_attack_training)
+
+summary(heart_attack_logit1)
+```
+
+  
+  
+Growth/decay factors for each explanatory variable (calculated as exponentials of the model coefficients):  
+  - Each variable's exponential coefficients are greater than 0, meaning that they are all growth factors  
+  - Angina has by far the highest growth factor at 17.54  
+
+```{r growthDecayFactors, results='markup', collapse=F}
+# Calculate the exponentials
+exp(coef(heart_attack_logit1))
+```
+  
+Confidence intervals for the 95% threshold of each coefficient of the model:
+
+```{r ConfInt, results='markup', collapse=F}
+# CIs using standard errors
+confint.default(heart_attack_logit1)
+```
+  
+Hosmer and Lemeshow Goodness of Fit:
+
+```{r HosmerLemeshow}
+# Carry out Hosmer & Lemeshow GOF
+heart_attackLogitHoslem = hoslem.test(bal_hrt_attack_training$heart_attack, fitted(heart_attack_logit1))
+heart_attackLogitHoslem
+```
+  
+According to the Hosmer and Lemeshow Goodness of Fit test when using the training dataset, the p value is `r heart_attackLogitHoslem$p.value`. This is very small so it means that this model is a good fit. Although this test is not very meaningful for models with only factors, it continues to support the other analysis. 
+
+McFadden test:
+
+```{r McFadden}
+# Carry out the McFadden Test
+heart_attack_logit1_pr2 = pR2(heart_attack_logit1)
+heart_attack_logit1_pr2
+```
+
+The McFadden value of this model is `r heart_attack_logit1_pr2['McFadden']`, which means that about 35% of the variations in y is explained by the variables in the model.  
+  
+ROC & AUC analysis:  
+Use training and test datasets to evaluate the area under the curve (AUC) for each.  
+  
+Training:
+
+```{r roc_auc}
+# Carry out the probability calculation for the training set
+# prob = predict(heart_attack_logit1, bal_hrt_attack_training, type = "response")
+prob = plogis(predict(heart_attack_logit1, bal_hrt_attack_training))
+bal_hrt_attack_training$prob=prob
+
+# Create the roc and then calculate and plot the area under the curve
+h <- roc(heart_attack~prob, data=bal_hrt_attack_training)
+area_curve <- auc(h) # area-under-curve (prefer 0.8 or higher)
+plot(h)
+```
+
+The the area-under-curve is `r area_curve` for the training data, which is more than 0.8. This outcome agrees with the Hosmer and Lemeshow test that the model is considered a good fit. More importantly, we will now look at the test data.   
+  
+Test set: 
+
+```{r roc_auc2}
+# Carry out the probability calculation for the test set
+# prob2 = predict(heart_attack_logit1, bal_hrt_attack_test, type = "response") # use model on test data
+prob2 = plogis(predict(heart_attack_logit1, bal_hrt_attack_test))
+bal_hrt_attack_test$prob=prob2
+
+# Create the roc and then calculate and plot the area under the curve
+j <- roc(heart_attack~prob, data=bal_hrt_attack_test)
+area_curve2 <- auc(j) # area-under-curve (prefer 0.8 or higher)
+plot(j)
+```
+
+The the area-under-curve is `r area_curve2` which is also above .8, meaning that this is a strong model.  
+  
+Create confusion matrix from logistic regression output  
+
+```{r cm, include=F}
+
+# confusion matrix for test
+cmlog = table(bal_hrt_attack_test$heart_attack, prob2 > .5)
+
+
+# Compute accuracy from confusion
+accuracy.logit = (cmlog[[1]] + cmlog[[4]])/sum(cmlog)
+accuracy.logit
+
+# Compute the sensitivity from confusion matrix
+sensitivity.logit = cmlog[[1]]/(cmlog[[1]] + cmlog[[2]])
+sensitivity.logit
+
+# Compute the specificity from confusion matrix
+specificity.logit = cmlog[[4]]/(cmlog[[3]] + cmlog[[4]])
+specificity.logit
+
+# Compute the precision from confusion matrix
+precision.logit = cmlog[[1]]/(cmlog[[1]] + cmlog[[3]])
+precision.logit
+
+# Compute the recall from confusion matrix
+recall.logit = cmlog[[1]]/(cmlog[[1]] + cmlog[[2]])
+recall.logit
+
+# Compute the F1 Score from precision and recall
+f1score.logit = 2 * ((precision.logit * recall.logit)/(precision.logit + recall.logit))
+f1score.logit
+```
+
+Statistic       | Logistic Regression Score     | 
+----------------------|------------------------------|
+Accuracy              |         0.780653    |
+Sensitivity           |         0.8145914   |
+Specificity           |         0.7532936   | 
+Precision             |         0.7269097   |
+Recall                |         0.8145914   |
+F1 Score              |         0.7682569   |
+  
+## 6. Model Evaluation
+
+Once all the models were carried out, a comparison was done between the models to determine which is the best model to use when predicting the occurance of a heart attack.
+
+However, before we delve into evaluating the model, we will briefly define the metrics for which our models will be evaluated. 
+
+1. Accuracy: This is the fraction of heart attack predictions our model got right
+
+2. Precision: This is the fraction of heart attack predictions that are actually correct, whether true or false. 
+
+3. Recall: This is the fraction of actual postives i.e. heart attack predictions identified correctly. It is also the sensitivity of the model
+
+4. F1 Score: This is a harmonic mean of precision and recall
+
+
+### 6.1 SMART Question: What model had the best performance for predicting heart attacks?
+
+The table below shows the results for different performance metrics when our models were evaluated using the test data from the previous section.
+  
+  
+Metric                 | Logistic Regression | Classification Tree | Bagged Tree | Random Forest |
+-----------------------|---------------------|---------------------|-------------|----------------|
+Accuracy               | `r accuracy.logit`    | `r accuracy.dec`    |`r accuracy.bag`| `r accuracy.randT`  |
+Specificity            | `r specificity.logit` | `r specificity.dec` |`r specificity.bag`           | `r specificity.randT` | 
+Sensitivity            | `r sensitivity.logit` | `r sensitivity.dec` |`r sensitivity.bag`           | `r sensitivity.randT` |  
+Precision              | `r precision.logit`   | `r precision.dec`   |`r precision.bag`             | `r precision.randT`   |
+Recall                 | `r recall.logit`      | `r recall.dec`      |`r recall.bag` | `r recall.randT`                |
+F1 Score               | `r f1score.logit`     | `r f1score.dec`     |`r f1score.bag`| `r f1score.randT`               | 
+
+We observed that the range for accuracy across all four models is 77.6% - 80.13%. The Random Forest Model produced the highest accuracy (80.13%) while the Classification Tree had the least accuracy (77.6%). 
+
+However, in a classification task like predicting heart attacks (and most health related cases), it is important to look beyond accuracy in selecting the best model. The recall is an important metric since it measures heart attack predictions identified correctly which is desirable, because we do not want to give a wrong prediction for patients using the our model. The logistic regression model as well as the Random Forest Model give the highest values for recall of 81.45% and 81.09% respectively.
+
+Overall, the predictive models for heart attack had good prediction performance,  with only slight differences.
+
+<br></br>
+
+## 7. Conclusion & Key Takeaways
+
+In this study, we built predictive models for heart attacks using multiple machine learning algorithms; including logistic regression, decision tree, bagged tree, and random forest. By comparing their prediction performance on the test data set, our predictive models showed similar performance in predicting heart attack in terms of sensitivity, specificity, precision, recall and accuracy. However, the random forest prediction model had the highest accuracy while the Logistic regression model had the highest sensitivity (recall). 
+
+Our statistical analysis earlier reported risk factors and also identified agina, general health, employment status, and high blood pressure as potential risk factors related to heart attack, with angina being the significantly most important predictor.
+
+An important limitation of our study is that the BRFSS data was self-reported and subject to recall bias that could affect the performance of our predictive models. In the event that we have clinical data, we may experience better performance with our models for predicting heart attack.
+
+Our models and findings can find application in early detection as well as prevention of heart attacks for the demography under study.
+
+
+## References
+
+Center For Disease Control & Prevention (CDC). (Novemer 28, 2017). Heart Disease Facts - Heart Disease in the United States. Retrieved December 5th, 2019, from https://www.cdc.gov/heartdisease/facts.htm
+
+National Health Service (NHS). (November 10, 2016). Heart Attack Causes. Retrieved December 5th, 2019, from https://www.nhs.uk/conditions/heart-attack/causes/
