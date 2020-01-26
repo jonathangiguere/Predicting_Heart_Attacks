@@ -10,4 +10,5 @@ The data for this project was found on the CDC's website: https://www.cdc.gov/br
 ## Using the Files
 - The .RData file shows the raw data used for the project.
 - The .Rmd file shows all of my group's code and write-up.  This file can be downloaded and knitted to get the final output.
-- The .html file is the knitted R-Markdown file.  Look at this if you are only interested in the output of the analysis.  To view the rendered html file, go to 
+- The .html file is the knitted R-Markdown file.  Look at this if you are only interested in the output of the analysis.  To view the rendered html file, go to http://htmlpreview.github.io/?https://github.com/jonathangiguere/Predicting_Heart_Attacks/blob/master/Group-Project-2-Summary--Part-III-.html.
+- To view my group's Google Slides presentation, visit https://docs.google.com/presentation/d/1WoqejKrXpnS-1ryam_BUHyRcLgHx7wUvCGjpovkDQr8/edit?usp=sharing.
